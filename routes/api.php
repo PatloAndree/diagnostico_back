@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DiagnosticoController;
+use App\Http\Controllers\Api\DiagnosticoAdhdController;
 use App\Http\Controllers\Api\DiagnosticoMinimoController;
 use App\Http\Controllers\Api\InstitucionController;
 use App\Http\Controllers\Api\PacienteController;
@@ -16,6 +17,8 @@ Route::apiResource('pacientes', PacienteController::class);
 
 Route::get('diagnosticos/minimo/formulario', [DiagnosticoMinimoController::class, 'formulario']);
 Route::post('diagnosticos/minimo', [DiagnosticoMinimoController::class, 'ejecutar'])
+    ->middleware('auth:sanctum');
+Route::post('diagnosticos/adhd', [DiagnosticoAdhdController::class, 'ejecutar'])
     ->middleware('auth:sanctum');
 
 Route::get('diagnosticos', [DiagnosticoController::class, 'index'])

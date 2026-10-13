@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+import pickle
 import sys
 
 import matplotlib.pyplot as plt
@@ -37,6 +38,7 @@ SEMILLA = 42
 TOTAL_REGISTROS = 30
 RAIZ = Path(__file__).resolve().parent.parent
 CSV_POR_DEFECTO = RAIZ / "datos" / "respuestas_adhd.csv"
+MODELO_POR_DEFECTO = RAIZ / "modelos" / "adhd_random_forest.pkl"
 FEATURES = [f"item_{numero}" for numero in range(1, 19)]
 NOMBRES_ITEMS = [
     "Atención a detalles", "Mueve manos o pies", "Mantiene atención",
@@ -241,7 +243,7 @@ def leer_prediccion(texto: str) -> np.ndarray:
     return np.asarray([valores])
 
 
-def entrenar(ruta: Path, prediccion: str | None) -> None:
+def entrenar(ruta: Path, prediccion: str | None, modelo_salida: Path | None) -> None:
     x, y, es_demostracion = cargar_csv(ruta)
     x_entrenamiento, x_prueba, y_entrenamiento, y_prueba = train_test_split(
         x, y, test_size=0.20, random_state=SEMILLA, stratify=y
@@ -264,6 +266,15 @@ def entrenar(ruta: Path, prediccion: str | None) -> None:
     imprimir_importancias(modelo)
     mostrar_graficos(modelo, x_entrenamiento, y_entrenamiento, y_prueba, pred, prob)
 
+    if modelo_salida is not None:
+        # Se reentrena con todos los registros antes de publicarlo para que la
+        # API use toda la información disponible, no solo los 24 del split.
+        modelo.fit(x, y)
+        modelo_salida.parent.mkdir(parents=True, exist_ok=True)
+        with modelo_salida.open("wb") as archivo:
+            pickle.dump({"modelo": modelo, "features": FEATURES}, archivo)
+        print(f"\nModelo entrenado guardado en: {modelo_salida}")
+
     if prediccion is not None:
         caso = leer_prediccion(prediccion)
         probabilidad = modelo.predict_proba(caso)[0, 1]
@@ -282,11 +293,15 @@ def main() -> None:
         help="CSV de 30 registros para entrenar. Por defecto: datos/respuestas_adhd.csv.",
     )
     parser.add_argument("--predecir", metavar="ITEMS", help="18 valores 0-3 separados por comas; se consulta tras entrenar.")
+    parser.add_argument(
+        "--guardar-modelo", nargs="?", type=Path, const=MODELO_POR_DEFECTO,
+        help="Guarda el modelo entrenado para que Laravel lo use. Sin ruta usa modelos/adhd_random_forest.pkl.",
+    )
     args = parser.parse_args()
     if args.crear_plantilla:
         plantilla()
     else:
-        entrenar(args.entrenar, args.predecir)
+        entrenar(args.entrenar, args.predecir, args.guardar_modelo)
 
 
 if __name__ == "__main__":
