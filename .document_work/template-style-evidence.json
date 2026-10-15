@@ -1,0 +1,90 @@
+{
+  "input": "C:\\Users\\PERCY\\Desktop\\resultados_random_forest_adhd.docx",
+  "fonts_by_char_count": {
+    "Calibri": 5864
+  },
+  "direct_run_formatting_runs": 56,
+  "direct_paragraph_formatting_paragraphs": 36,
+  "heading_like_paragraphs_not_heading_style": [
+    {
+      "para_index": 1,
+      "text": "Resultados del modelo Random Forest para ADHD Rating Scale IV",
+      "style": "Title"
+    },
+    {
+      "para_index": 38,
+      "text": "M\u00e9trica",
+      "style": "Normal"
+    },
+    {
+      "para_index": 39,
+      "text": "Resultado",
+      "style": "Normal"
+    },
+    {
+      "para_index": 40,
+      "text": "Interpretaci\u00f3n",
+      "style": "Normal"
+    }
+  ],
+  "examples": {
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 1,
+        "text": "Resultados del modelo Random Forest para ADHD Rating Scale IV",
+        "style": "Title"
+      },
+      {
+        "para_index": 2,
+        "text": "Versi\u00f3n para profesores",
+        "style": "Normal"
+      },
+      {
+        "para_index": 4,
+        "text": "Resultados del modelo Random Forest",
+        "style": "Heading 1"
+      },
+      {
+        "para_index": 5,
+        "text": "En esta secci\u00f3n se presentan los resultados obtenidos mediante el algoritmo Random Forest Classifier aplicado a la ADHD ",
+        "style": "Normal"
+      },
+      {
+        "para_index": 6,
+        "text": "Para esta prueba se generaron 10 000 registros sint\u00e9ticos. Cada registro contiene las respuestas de los 18 \u00edtems de la e",
+        "style": "Normal"
+      }
+    ],
+    "direct_run_formatting": [
+      {
+        "para_index": 1,
+        "run_text": "Resultados del modelo Random Forest para ADHD Rating Scale IV",
+        "style": "Title"
+      },
+      {
+        "para_index": 2,
+        "run_text": "Versi\u00f3n para profesores",
+        "style": "Normal"
+      },
+      {
+        "para_index": 4,
+        "run_text": "Resultados del modelo Random Forest",
+        "style": "Heading 1"
+      },
+      {
+        "para_index": 5,
+        "run_text": "En esta secci\u00f3n se presentan los resultados obtenidos mediante el algoritmo Rand",
+        "style": "Normal"
+      },
+      {
+        "para_index": 6,
+        "run_text": "Para esta prueba se generaron 10 000 registros sint\u00e9ticos. Cada registro contien",
+        "style": "Normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

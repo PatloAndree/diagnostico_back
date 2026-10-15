@@ -11,6 +11,7 @@ carga solamente cuando Laravel solicita un diagnóstico.
 
 from __future__ import annotations
 
+import argparse
 import json
 import pickle
 import sys
@@ -21,7 +22,11 @@ import numpy as np
 
 
 RAIZ = Path(__file__).resolve().parent.parent
-MODELO_POR_DEFECTO = RAIZ / "modelos" / "adhd_random_forest.pkl"
+MODELOS = {
+    "random_forest": RAIZ / "modelos" / "adhd_random_forest.pkl",
+    "svm": RAIZ / "modelos" / "adhd_svm.pkl",
+    "regresion_lineal": RAIZ / "modelos" / "adhd_regresion_lineal.pkl",
+}
 ITEMS = tuple(f"item_{numero}" for numero in range(1, 19))
 NOMBRES_ITEMS = (
     "Atención a detalles", "Mueve manos o pies", "Mantiene atención",
@@ -60,7 +65,7 @@ def cargar_respuestas(entrada: dict) -> list[int]:
 
 def cargar_modelo(ruta: Path):
     if not ruta.is_file():
-        error("No existe el modelo entrenado. Entrene y publique modelos/adhd_random_forest.pkl antes de diagnosticar.")
+        error(f"No existe el modelo entrenado: {ruta.name}. Ejecute el entrenamiento antes de diagnosticar.")
     try:
         with ruta.open("rb") as archivo:
             paquete = pickle.load(archivo)
@@ -84,11 +89,21 @@ def clasificacion_regla(inatencion: int, hiperactividad: int) -> tuple[str, str]
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Obtiene un resultado ADHD con el modelo indicado.")
+    parser.add_argument(
+        "--modelo", choices=tuple(MODELOS), default="random_forest",
+        help="Modelo a usar. Por defecto: random_forest.",
+    )
+    parser.add_argument(
+        "entrada_base64", nargs="?",
+        help="JSON codificado en Base64. Si se omite, el JSON se lee de stdin.",
+    )
+    args = parser.parse_args()
     try:
         # Laravel envía un único argumento Base64; se conserva stdin para poder
         # ejecutar y probar el archivo manualmente si fuera necesario.
-        if len(sys.argv) == 2:
-            entrada = json.loads(b64decode(sys.argv[1]).decode("utf-8"))
+        if args.entrada_base64:
+            entrada = json.loads(b64decode(args.entrada_base64).decode("utf-8"))
         else:
             entrada = json.load(sys.stdin)
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
@@ -97,7 +112,7 @@ def main() -> None:
         error("La entrada debe ser un objeto JSON.")
 
     valores = cargar_respuestas(entrada)
-    modelo = cargar_modelo(MODELO_POR_DEFECTO)
+    modelo = cargar_modelo(MODELOS[args.modelo])
     vector = np.asarray([valores])
     probabilidad = float(modelo.predict_proba(vector)[0, 1])
     prediccion_modelo = int(modelo.predict(vector)[0])
@@ -132,6 +147,7 @@ def main() -> None:
             "sintomas_inatencion": sintomas_inatencion,
             "sintomas_hiperactividad_impulsividad": sintomas_hiperactividad,
             "clasificacion_tamizaje": clasificacion,
+            "modelo": args.modelo,
             "prediccion_modelo": "positivo" if prediccion_modelo else "negativo",
             "probabilidad_modelo": round(probabilidad, 4),
             "conclusion": conclusion,
