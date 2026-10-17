@@ -17,7 +17,7 @@ class DiagnosticoController extends Controller
         ]);
 
         $diagnosticos = Diagnostico::query()
-            ->with(['paciente', 'usuario', 'tests.test'])
+            ->with(['paciente', 'usuario', 'tests.test', 'tests.detalles'])
             ->when($filtros['paciente_id'] ?? null, fn ($query, $pacienteId) => $query->where('paciente_id', $pacienteId))
             ->when($filtros['estado'] ?? null, fn ($query, $estado) => $query->where('estado', $estado))
             ->orderByDesc('fecha')

@@ -79,7 +79,11 @@ class DiagnosticoMinimoTest extends TestCase
         $this->getJson('/api/diagnosticos?paciente_id='.$paciente->id)
             ->assertOk()
             ->assertJsonCount(1)
-            ->assertJsonPath('0.id', $diagnosticoId);
+            ->assertJsonPath('0.id', $diagnosticoId)
+            ->assertJsonPath('0.tests.0.puntaje_total', 8)
+            ->assertJsonPath('0.tests.0.porcentaje', 66.67)
+            ->assertJsonCount(4, '0.tests.0.detalles')
+            ->assertJsonPath('0.tests.0.detalles.0.respuesta', '3');
 
         $this->getJson('/api/diagnosticos/'.$diagnosticoId)
             ->assertOk()
