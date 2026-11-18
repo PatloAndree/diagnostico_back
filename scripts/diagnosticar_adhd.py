@@ -75,7 +75,12 @@ def cargar_modelo(ruta: Path):
     modelo = paquete.get("modelo") if isinstance(paquete, dict) else paquete
     if not hasattr(modelo, "predict") or not hasattr(modelo, "predict_proba"):
         error("El archivo de modelo no contiene un clasificador compatible.")
-    return modelo
+    # Los modelos creados antes de esta mejora no incluyen umbral; para ellos
+    # se mantiene la semántica histórica de 0.50.
+    umbral = paquete.get("umbral_decision", 0.50) if isinstance(paquete, dict) else 0.50
+    if not isinstance(umbral, (int, float)) or not 0 < umbral < 1:
+        error("El umbral de decisión guardado en el modelo no es válido.")
+    return modelo, float(umbral)
 
 
 def clasificacion_regla(inatencion: int, hiperactividad: int) -> tuple[str, str]:
@@ -112,10 +117,10 @@ def main() -> None:
         error("La entrada debe ser un objeto JSON.")
 
     valores = cargar_respuestas(entrada)
-    modelo = cargar_modelo(MODELOS[args.modelo])
+    modelo, umbral = cargar_modelo(MODELOS[args.modelo])
     vector = np.asarray([valores])
     probabilidad = float(modelo.predict_proba(vector)[0, 1])
-    prediccion_modelo = int(modelo.predict(vector)[0])
+    prediccion_modelo = int(probabilidad >= umbral)
 
     sintomas_inatencion = sum(valores[indice] >= 2 for indice in INDICES_INATENCION)
     sintomas_hiperactividad = sum(valores[indice] >= 2 for indice in INDICES_HIPERACTIVIDAD)
@@ -150,6 +155,7 @@ def main() -> None:
             "modelo": args.modelo,
             "prediccion_modelo": "positivo" if prediccion_modelo else "negativo",
             "probabilidad_modelo": round(probabilidad, 4),
+            "umbral_decision": round(umbral, 2),
             "conclusion": conclusion,
             "observaciones": "Resultado de tamizaje basado en respuestas del docente y en un modelo entrenado; requiere interpretación profesional.",
         },

@@ -1,0 +1,20 @@
+{
+  "random_forest": {
+    "F1 score": 0.8,
+    "Precisión": 0.6667,
+    "Exactitud": 0.8333,
+    "Sensibilidad": 1.0
+  },
+  "svm": {
+    "F1 score": 0.0,
+    "Precisión": 0.0,
+    "Exactitud": 0.6667,
+    "Sensibilidad": 0.0
+  },
+  "regresion_lineal": {
+    "F1 score": 0.5,
+    "Precisión": 0.5,
+    "Exactitud": 0.6667,
+    "Sensibilidad": 0.5
+  }
+}

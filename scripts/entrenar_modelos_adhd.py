@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import pickle
 import sys
 from pathlib import Path
@@ -38,7 +39,8 @@ from sklearn.metrics import (
     recall_score, roc_auc_score, roc_curve, make_scorer,
 )
 from sklearn.calibration import calibration_curve
-from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
+from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_validate, train_test_split
+from sklearn.base import clone
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -51,6 +53,12 @@ CSV_POR_DEFECTO = RAIZ / "datos" / "respuestas_adhd.csv"
 CARPETA_MODELOS = RAIZ / "modelos"
 CARPETA_RESULTADOS = RAIZ / "resultados_adhd"
 FEATURES = [f"item_{numero}" for numero in range(1, 19)]
+NOMBRES_MODELOS = {
+    "random_forest": "Random Forest",
+    "svm": "SVM",
+    # La clave se conserva por compatibilidad con el archivo pickle y la API.
+    "regresion_lineal": "Regresión logística",
+}
 
 
 def generar_datos_demostracion() -> tuple[np.ndarray, np.ndarray]:
@@ -103,7 +111,10 @@ def cargar_csv(ruta: Path) -> tuple[np.ndarray, np.ndarray, bool]:
 def crear_modelos() -> dict[str, Pipeline | RandomForestClassifier]:
     return {
         "random_forest": RandomForestClassifier(
-            n_estimators=300, max_features="sqrt", min_samples_leaf=1,
+            # Una profundidad moderada evita que 30 registros hagan que cada
+            # árbol memorice el entrenamiento. Más árboles estabilizan la
+            # probabilidad estimada para el umbral de clasificación.
+            n_estimators=500, max_depth=2, max_features="sqrt", min_samples_leaf=1,
             class_weight="balanced", random_state=SEMILLA, n_jobs=1,
         ),
         "svm": Pipeline([
@@ -124,30 +135,55 @@ def crear_modelos() -> dict[str, Pipeline | RandomForestClassifier]:
     }
 
 
+def seleccionar_umbral_f1(modelo, x_train: np.ndarray, y_train: np.ndarray) -> float:
+    """Elige el umbral por F1 sin inspeccionar los datos de prueba.
+
+    El 0.50 predeterminado puede ser demasiado conservador en una muestra
+    pequeña y desbalanceada. Las probabilidades out-of-fold evitan escoger el
+    umbral a partir de predicciones hechas sobre la misma fila entrenada.
+    """
+    divisiones = min(3, int(np.bincount(y_train, minlength=2).min()))
+    cv = StratifiedKFold(n_splits=divisiones, shuffle=True, random_state=SEMILLA)
+    probabilidades = cross_val_predict(
+        clone(modelo), x_train, y_train, cv=cv, method="predict_proba", n_jobs=1
+    )[:, 1]
+    candidatos = np.arange(0.05, 1.0, 0.05)
+    # Ante F1 idéntico, se prefiere mayor precisión; después, el umbral mayor.
+    return float(max(
+        candidatos,
+        key=lambda umbral: (
+            f1_score(y_train, probabilidades >= umbral, zero_division=0),
+            precision_score(y_train, probabilidades >= umbral, zero_division=0),
+            umbral,
+        ),
+    ))
+
+
 def evaluar(nombre: str, modelo, x: np.ndarray, y: np.ndarray) -> dict:
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=0.20, random_state=SEMILLA, stratify=y
     )
+    umbral = seleccionar_umbral_f1(modelo, x_train, y_train) if nombre == "RANDOM_FOREST" else 0.50
     modelo.fit(x_train, y_train)
-    prediccion = modelo.predict(x_test)
     probabilidad = modelo.predict_proba(x_test)[:, 1]
+    prediccion = (probabilidad >= umbral).astype(int)
     tn, fp, fn, tp = confusion_matrix(y_test, prediccion, labels=[0, 1]).ravel()
     especificidad = tn / (tn + fp) if tn + fp else 0.0
     metricas = {
-        "Accuracy": accuracy_score(y_test, prediccion),
+        "Exactitud": accuracy_score(y_test, prediccion),
         "Balanced accuracy": balanced_accuracy_score(y_test, prediccion),
         "Precisión": precision_score(y_test, prediccion, zero_division=0),
-        "Recall": recall_score(y_test, prediccion, zero_division=0),
+        "Sensibilidad": recall_score(y_test, prediccion, zero_division=0),
         "Especificidad": especificidad,
-        "F1": f1_score(y_test, prediccion, zero_division=0),
+        "F1 score": f1_score(y_test, prediccion, zero_division=0),
         "ROC-AUC": roc_auc_score(y_test, probabilidad),
         "PR-AUC": average_precision_score(y_test, probabilidad),
     }
-    print(f"{nombre}: " + " | ".join(f"{clave}={valor:.3f}" for clave, valor in metricas.items()))
+    print(f"{nombre} (umbral={umbral:.2f}): " + " | ".join(f"{clave}={valor:.3f}" for clave, valor in metricas.items()))
     return {
         "modelo": modelo, "x_train": x_train, "y_train": y_train,
         "y_test": y_test, "prediccion": prediccion, "probabilidad": probabilidad,
-        "matriz": (tn, fp, fn, tp), "metricas": metricas,
+        "matriz": (tn, fp, fn, tp), "metricas": metricas, "umbral": umbral,
     }
 
 
@@ -160,10 +196,12 @@ def guardar_graficos(nombre: str, evaluacion: dict) -> None:
     metricas = evaluacion["metricas"]
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    barras = ax.bar(metricas.keys(), metricas.values(), color="#2563eb")
-    ax.set(ylim=(0, 1), title=f"1. Métricas — {nombre.replace('_', ' ').title()}")
+    metricas_principales = ["F1 score", "Precisión", "Exactitud", "Sensibilidad"]
+    valores_principales = [metricas[metrica] for metrica in metricas_principales]
+    barras = ax.bar(metricas_principales, valores_principales, color="#2563eb")
+    ax.set(ylim=(0, 1), title=f"1. Métricas — {NOMBRES_MODELOS[nombre]}")
     ax.tick_params(axis="x", rotation=25)
-    for barra, valor in zip(barras, metricas.values()):
+    for barra, valor in zip(barras, valores_principales):
         ax.text(barra.get_x() + barra.get_width() / 2, valor + .02, f"{valor:.2f}", ha="center")
     fig.tight_layout(); fig.savefig(carpeta / "01_metricas.png", dpi=180); plt.close(fig)
 
@@ -220,20 +258,41 @@ def guardar_graficos(nombre: str, evaluacion: dict) -> None:
 
 def guardar_comparacion(evaluaciones: dict[str, dict]) -> None:
     nombres = list(evaluaciones)
-    metricas = ["Accuracy", "F1", "ROC-AUC", "PR-AUC"]
+    # Las cuatro métricas solicitadas se calculan sobre exactamente la misma
+    # partición estratificada para que la comparación sea justa.
+    metricas = ["F1 score", "Precisión", "Exactitud", "Sensibilidad"]
     posiciones = np.arange(len(metricas)); ancho = .24
     fig, ax = plt.subplots(figsize=(10, 6))
     for indice, nombre in enumerate(nombres):
         valores = [evaluaciones[nombre]["metricas"][metrica] for metrica in metricas]
-        barras = ax.bar(posiciones + (indice - 1) * ancho, valores, ancho, label=nombre.replace("_", " ").title())
+        barras = ax.bar(posiciones + (indice - 1) * ancho, valores, ancho, label=NOMBRES_MODELOS[nombre])
         ax.bar_label(barras, fmt="%.2f", padding=2, fontsize=8)
     ax.set(xticks=posiciones, xticklabels=metricas, ylim=(0, 1.12), ylabel="Puntaje", title="Comparación de modelos — misma partición de prueba")
     ax.legend(); ax.grid(axis="y", alpha=.3); fig.tight_layout()
     CARPETA_RESULTADOS.mkdir(parents=True, exist_ok=True)
     fig.savefig(CARPETA_RESULTADOS / "comparacion_modelos.png", dpi=180); plt.close(fig)
 
+    # Resultado reutilizable por el backend o por un informe, sin depender de
+    # leer valores desde una imagen.
+    ruta_csv = CARPETA_RESULTADOS / "comparacion_metricas.csv"
+    with ruta_csv.open("w", encoding="utf-8", newline="") as archivo:
+        escritor = csv.DictWriter(archivo, fieldnames=["modelo", *metricas])
+        escritor.writeheader()
+        for nombre in nombres:
+            escritor.writerow({"modelo": NOMBRES_MODELOS[nombre], **{
+                metrica: round(evaluaciones[nombre]["metricas"][metrica], 4)
+                for metrica in metricas
+            }})
 
-def guardar_modelo(nombre: str, modelo, x: np.ndarray, y: np.ndarray, demostracion: bool) -> Path:
+    ruta_json = CARPETA_RESULTADOS / "comparacion_metricas.json"
+    with ruta_json.open("w", encoding="utf-8") as archivo:
+        json.dump({
+            nombre: {metrica: round(datos["metricas"][metrica], 4) for metrica in metricas}
+            for nombre, datos in evaluaciones.items()
+        }, archivo, ensure_ascii=False, indent=2)
+
+
+def guardar_modelo(nombre: str, modelo, x: np.ndarray, y: np.ndarray, demostracion: bool, umbral: float) -> Path:
     modelo.fit(x, y)
     ruta = CARPETA_MODELOS / f"adhd_{nombre}.pkl"
     ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -243,6 +302,7 @@ def guardar_modelo(nombre: str, modelo, x: np.ndarray, y: np.ndarray, demostraci
             "features": FEATURES,
             "algoritmo": {"random_forest": "Random Forest", "svm": "SVM",
                           "regresion_lineal": "Regresión logística (clasificador lineal)"}[nombre],
+            "umbral_decision": umbral,
             "datos_demostracion": demostracion,
         }, archivo)
     return ruta
@@ -262,7 +322,7 @@ def main() -> None:
         evaluacion = evaluar(nombre.upper(), modelo, x, y)
         evaluaciones[nombre] = evaluacion
         guardar_graficos(nombre, evaluacion)
-        ruta = guardar_modelo(nombre, modelo, x, y, demostracion)
+        ruta = guardar_modelo(nombre, modelo, x, y, demostracion, evaluacion["umbral"])
         print(f"Modelo guardado: {ruta}")
     guardar_comparacion(evaluaciones)
     print(f"Gráficas guardadas en: {CARPETA_RESULTADOS}")
